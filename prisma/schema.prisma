@@ -39,6 +39,7 @@ model PatientProfile {
   isPregnant        Boolean   @default(false)
   lastPeriodDate    DateTime?
   privacyMode       Boolean   @default(false)
+  doctorNotes       String?   // ملاحظات الدكتور الخاصة - مش بتظهر للمريضة، بيدخلها الدكتور بس
 
   visits      Visit[]
   attachments MedicalAttachment[]
