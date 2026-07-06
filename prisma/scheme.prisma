@@ -89,7 +89,7 @@ model Appointment {
   completedAt     DateTime?
 
   scheduledDate   DateTime // اليوم المحجوز فيه
-  notifiedAt3Left DateTime? // آخر تنبيه واتساب "باقي 3"
+  notifiedAt3Left DateTime? // آخر تنبيه واتساب "باقي 4"
 
   visit           Visit?
   createdAt       DateTime @default(now())
