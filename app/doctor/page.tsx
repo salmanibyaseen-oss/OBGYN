@@ -1,38 +1,44 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import ClinicMark from "@/components/ClinicMark";
 
-type Appointment = {
-  id: string;
-  queueNumber: number;
-  status: string;
-  patient: { name: string };
+type DailyStats = {
+  period: "daily";
+  date: string;
+  total: number;
+  byStatus: Record<string, number>;
+  bySource: Record<string, number>;
+  byPriority: Record<string, number>;
+  avgWaitMinutes: number | null;
 };
 
-type Visit = {
-  id: string;
-  visitDate: string;
-  visitType: string;
-  diagnosis: string | null;
-  prescription: string | null;
-  doctorNotes: string | null;
+type MonthlyStats = {
+  period: "monthly";
+  month: string;
+  total: number;
+  byStatus: Record<string, number>;
+  bySource: Record<string, number>;
+  byVisitType: Record<string, number>;
+  newPatients: number;
+  returningPatients: number;
+  dailyCounts: { date: string; count: number }[];
 };
 
-type PatientDetail = {
-  id: string;
-  queueNumber: number;
-  patient: { name: string; phone: string };
-  isFirstVisit: boolean;
-  profile: {
-    dateOfBirth: string | null;
-    bloodType: string | null;
-    chronicConditions: string | null;
-    allergies: string | null;
-    isPregnant: boolean;
-    lastPeriodDate: string | null;
-  } | null;
-  visits: Visit[];
+const statusLabels: Record<string, string> = {
+  WAITING: "في الانتظار",
+  CALLED: "تم النداء",
+  IN_PROGRESS: "جاري الكشف",
+  COMPLETED: "مكتملة",
+  CANCELLED: "ملغاة",
+  NO_SHOW: "غياب",
+};
+
+const priorityLabels: Record<string, string> = {
+  EMERGENCY: "طارئة",
+  FOLLOWUP_URGENT: "متابعة عاجلة",
+  NORMAL: "عادي",
 };
 
 const visitTypeLabels: Record<string, string> = {
@@ -44,103 +50,101 @@ const visitTypeLabels: Record<string, string> = {
   POSTNATAL: "متابعة بعد الولادة",
 };
 
-export default function DoctorPage() {
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [diagnosis, setDiagnosis] = useState("");
-  const [prescription, setPrescription] = useState("");
+function StatCard({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-2xl border border-rose-400/20 bg-white p-4 shadow-soft">
+      <p className="mb-1 text-xs text-plum-900/50">{label}</p>
+      <p className="font-display text-2xl font-semibold text-wine-700">{value}</p>
+    </div>
+  );
+}
 
-  const [detail, setDetail] = useState<PatientDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+function BreakdownList({
+  title,
+  data,
+  labels,
+}: {
+  title: string;
+  data: Record<string, number>;
+  labels: Record<string, string>;
+}) {
+  const entries = Object.entries(data).filter(([, v]) => v > 0);
+  return (
+    <div className="rounded-2xl border border-rose-400/20 bg-white p-4 shadow-soft">
+      <p className="mb-3 text-sm font-semibold text-wine-600">{title}</p>
+      {entries.length === 0 ? (
+        <p className="text-sm text-plum-900/40">لا يوجد بيانات</p>
+      ) : (
+        <div className="space-y-2">
+          {entries.map(([key, count]) => (
+            <div key={key} className="flex items-center justify-between text-sm">
+              <span className="text-plum-900/70">{labels[key] || key}</span>
+              <span className="font-medium text-wine-700">{count}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
-  // فورم بيانات الكارت لو دي أول زيارة للمريضة
-  const [cardDateOfBirth, setCardDateOfBirth] = useState("");
-  const [cardBloodType, setCardBloodType] = useState("");
-  const [cardChronic, setCardChronic] = useState("");
-  const [cardAllergies, setCardAllergies] = useState("");
-  const [cardIsPregnant, setCardIsPregnant] = useState(false);
-  const [cardLastPeriod, setCardLastPeriod] = useState("");
-  const [cardSaving, setCardSaving] = useState(false);
-  const [cardSaved, setCardSaved] = useState(false);
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
 
-  async function fetchAppointments() {
-    const today = new Date().toISOString();
-    const res = await fetch(`/api/appointments?date=${today}`);
-    setAppointments(await res.json());
+function thisMonthStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export default function DoctorStatsPage() {
+  const [tab, setTab] = useState<"daily" | "monthly">("daily");
+  const [date, setDate] = useState(todayISO());
+  const [month, setMonth] = useState(thisMonthStr());
+  const [daily, setDaily] = useState<DailyStats | null>(null);
+  const [monthly, setMonthly] = useState<MonthlyStats | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function fetchDaily(d: string) {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/stats?period=daily&date=${d}`);
+      if (!res.ok) {
+        setError("مش متاح تشوف الإحصائيات دي");
+        return;
+      }
+      setDaily(await res.json());
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function fetchMonthly(m: string) {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/stats?period=monthly&month=${m}`);
+      if (!res.ok) {
+        setError("مش متاح تشوف الإحصائيات دي");
+        return;
+      }
+      setMonthly(await res.json());
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
-    fetchAppointments();
-  }, []);
+    if (tab === "daily") fetchDaily(date);
+    else fetchMonthly(month);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
-  const waiting = appointments.filter((a) => a.status === "WAITING");
-  const current = appointments.find((a) => a.id === activeId);
-
-  async function fetchDetail(id: string) {
-    setDetailLoading(true);
-    setCardSaved(false);
-    try {
-      const res = await fetch(`/api/appointments/${id}`);
-      const json: PatientDetail = await res.json();
-      setDetail(json);
-      setCardDateOfBirth(json.profile?.dateOfBirth?.slice(0, 10) || "");
-      setCardBloodType(json.profile?.bloodType || "");
-      setCardChronic(json.profile?.chronicConditions || "");
-      setCardAllergies(json.profile?.allergies || "");
-      setCardIsPregnant(json.profile?.isPregnant || false);
-      setCardLastPeriod(json.profile?.lastPeriodDate?.slice(0, 10) || "");
-    } finally {
-      setDetailLoading(false);
-    }
-  }
-
-  async function callNext() {
-    const next = waiting[0];
-    if (!next) return;
-    await fetch(`/api/appointments/${next.id}/call`, { method: "PATCH" });
-    setActiveId(next.id);
-    await fetchAppointments();
-    await fetchDetail(next.id);
-  }
-
-  async function saveCardData() {
-    if (!detail) return;
-    setCardSaving(true);
-    try {
-      await fetch("/api/profile", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phone: detail.patient.phone,
-          dateOfBirth: cardDateOfBirth || undefined,
-          bloodType: cardBloodType,
-          chronicConditions: cardChronic,
-          allergies: cardAllergies,
-          isPregnant: cardIsPregnant,
-          lastPeriodDate: cardLastPeriod || undefined,
-        }),
-      });
-      setCardSaved(true);
-    } finally {
-      setCardSaving(false);
-    }
-  }
-
-  async function completeVisit() {
-    if (!activeId) return;
-    await fetch(`/api/appointments/${activeId}/complete`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ diagnosis, prescription, visitType: "CHECKUP" }),
-    });
-    setActiveId(null);
-    setDetail(null);
-    setDiagnosis("");
-    setPrescription("");
-    await fetchAppointments();
-  }
-
-  const lastVisit = detail?.visits[0];
+  const maxDailyCount = monthly
+    ? Math.max(1, ...monthly.dailyCounts.map((d) => d.count))
+    : 1;
 
   return (
     <main dir="rtl" className="min-h-screen bg-blush-50 p-6 font-body">
@@ -149,201 +153,135 @@ export default function DoctorPage() {
           <div className="queue-badge h-10 w-10 flex-shrink-0 text-base font-display">
             <ClinicMark />
           </div>
-          <h1 className="font-display text-2xl font-semibold text-wine-700">لوحة الدكتور</h1>
+          <h1 className="font-display text-2xl font-semibold text-wine-700">الإحصائيات</h1>
         </div>
-        <button
-          onClick={async () => {
-            await fetch("/api/auth/logout", { method: "POST" });
-            window.location.href = "/login";
-          }}
+        <Link
+          href="/doctor"
           className="rounded-full border border-rose-400/30 px-4 py-1.5 text-sm text-plum-900/60 transition hover:bg-blush-100"
         >
-          تسجيل خروج
-        </button>
+          رجوع للوحة الدكتور
+        </Link>
       </div>
       <div className="arc-divider mb-6" />
 
-      {!current && (
-        <button
-          onClick={callNext}
-          disabled={waiting.length === 0}
-          className="mb-6 rounded-full bg-wine-600 px-6 py-3 font-medium text-white shadow-soft transition hover:bg-wine-700 disabled:opacity-40"
-        >
-          نداء المريضة التالية ({waiting.length} في الانتظار)
-        </button>
-      )}
-
-      {current && (
-        <div className="rounded-[1.75rem] border border-rose-400/20 bg-white p-6 shadow-soft">
-          <h2 className="mb-4 font-display text-lg font-semibold text-wine-700">
-            جاري كشف: {current.patient.name} (دور رقم {current.queueNumber})
-          </h2>
-
-          {detailLoading && <p className="mb-4 text-sm text-plum-900/50">جاري تحميل بيانات الحالة...</p>}
-
-          {/* أول زيارة: فورم بيانات الكارت */}
-          {detail?.isFirstVisit && (
-            <div className="mb-5 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
-              <p className="mb-3 text-sm font-medium text-plum-900">
-                أول زيارة للمريضة دي — من فضلك سجّل بيانات الكارت
-              </p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-xs text-plum-900/70">تاريخ الميلاد</label>
-                  <input
-                    type="date"
-                    value={cardDateOfBirth}
-                    onChange={(e) => setCardDateOfBirth(e.target.value)}
-                    className="w-full rounded-lg border border-rose-400/30 p-2 text-sm focus:border-wine-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-plum-900/70">فصيلة الدم</label>
-                  <input
-                    value={cardBloodType}
-                    onChange={(e) => setCardBloodType(e.target.value)}
-                    placeholder="مثال: O+"
-                    className="w-full rounded-lg border border-rose-400/30 p-2 text-sm focus:border-wine-500 focus:outline-none"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="mb-1 block text-xs text-plum-900/70">أمراض مزمنة</label>
-                  <input
-                    value={cardChronic}
-                    onChange={(e) => setCardChronic(e.target.value)}
-                    className="w-full rounded-lg border border-rose-400/30 p-2 text-sm focus:border-wine-500 focus:outline-none"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="mb-1 block text-xs text-plum-900/70">حساسية من أدوية</label>
-                  <input
-                    value={cardAllergies}
-                    onChange={(e) => setCardAllergies(e.target.value)}
-                    className="w-full rounded-lg border border-rose-400/30 p-2 text-sm focus:border-wine-500 focus:outline-none"
-                  />
-                </div>
-                <label className="flex items-center gap-2 text-sm text-plum-900/80">
-                  <input
-                    type="checkbox"
-                    checked={cardIsPregnant}
-                    onChange={(e) => setCardIsPregnant(e.target.checked)}
-                    className="h-4 w-4"
-                  />
-                  حامل حاليًا
-                </label>
-                {cardIsPregnant && (
-                  <div>
-                    <label className="mb-1 block text-xs text-plum-900/70">تاريخ آخر دورة (LMP)</label>
-                    <input
-                      type="date"
-                      value={cardLastPeriod}
-                      onChange={(e) => setCardLastPeriod(e.target.value)}
-                      className="w-full rounded-lg border border-rose-400/30 p-2 text-sm focus:border-wine-500 focus:outline-none"
-                    />
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={saveCardData}
-                disabled={cardSaving}
-                className="mt-3 rounded-full bg-sage-500 px-5 py-2 text-sm font-medium text-white transition hover:bg-sage-400 disabled:opacity-50"
-              >
-                {cardSaving ? "جاري الحفظ..." : "حفظ بيانات الكارت"}
-              </button>
-              {cardSaved && <span className="mr-3 text-sm text-sage-500">تم الحفظ ✓</span>}
-            </div>
-          )}
-
-          {/* حالة متابعة: التاريخ المرضي + آخر روشتة */}
-          {detail && !detail.isFirstVisit && (
-            <div className="mb-5 space-y-4">
-              {lastVisit && (
-                <div className="rounded-2xl border border-wine-600/20 bg-blush-50 p-4">
-                  <p className="mb-1 text-sm font-semibold text-wine-700">
-                    آخر روشتة (بتاريخ {new Date(lastVisit.visitDate).toLocaleDateString("ar-EG")})
-                  </p>
-                  <p className="text-sm text-plum-900/80">
-                    {lastVisit.prescription || "مفيش روشتة مسجلة في آخر زيارة"}
-                  </p>
-                  {lastVisit.diagnosis && (
-                    <p className="mt-1 text-xs text-plum-900/50">التشخيص وقتها: {lastVisit.diagnosis}</p>
-                  )}
-                </div>
-              )}
-
-              <div>
-                <p className="mb-2 text-sm font-semibold text-wine-600">التاريخ المرضي</p>
-                {detail.profile && (
-                  <div className="mb-3 grid grid-cols-2 gap-2 rounded-xl border border-rose-400/15 bg-white p-3 text-xs text-plum-900/70 sm:grid-cols-4">
-                    <span>فصيلة الدم: {detail.profile.bloodType || "-"}</span>
-                    <span>أمراض مزمنة: {detail.profile.chronicConditions || "-"}</span>
-                    <span>حساسية: {detail.profile.allergies || "-"}</span>
-                    <span>حامل: {detail.profile.isPregnant ? "نعم" : "لا"}</span>
-                  </div>
-                )}
-                <div className="max-h-64 space-y-2 overflow-y-auto">
-                  {detail.visits.map((v) => (
-                    <div key={v.id} className="rounded-xl border border-rose-400/10 bg-white p-3">
-                      <div className="mb-1 flex items-center justify-between">
-                        <span className="text-xs font-medium text-wine-600">
-                          {visitTypeLabels[v.visitType] || v.visitType}
-                        </span>
-                        <span className="text-xs text-plum-900/50">
-                          {new Date(v.visitDate).toLocaleDateString("ar-EG")}
-                        </span>
-                      </div>
-                      {v.diagnosis && <p className="text-xs text-plum-900/70">التشخيص: {v.diagnosis}</p>}
-                      {v.prescription && (
-                        <p className="text-xs text-plum-900/70">الروشتة: {v.prescription}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <label className="mb-1 block text-sm text-plum-900/70">التشخيص</label>
-          <textarea
-            value={diagnosis}
-            onChange={(e) => setDiagnosis(e.target.value)}
-            className="mb-4 w-full rounded-xl border border-rose-400/30 p-2 focus:border-wine-500 focus:outline-none"
-            rows={2}
-          />
-
-          <label className="mb-1 block text-sm text-plum-900/70">الروشتة</label>
-          <textarea
-            value={prescription}
-            onChange={(e) => setPrescription(e.target.value)}
-            className="mb-4 w-full rounded-xl border border-rose-400/30 p-2 focus:border-wine-500 focus:outline-none"
-            rows={3}
-          />
-
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="flex overflow-hidden rounded-full border border-rose-400/30 bg-white">
           <button
-            onClick={completeVisit}
-            className="rounded-full bg-sage-500 px-6 py-2 font-medium text-white transition hover:bg-sage-400"
+            onClick={() => setTab("daily")}
+            className={`px-5 py-2 text-sm font-medium transition ${
+              tab === "daily" ? "bg-wine-600 text-white" : "text-plum-900/60 hover:bg-blush-100"
+            }`}
           >
-            إنهاء الكشف وإرسال الروشتة
+            يومي
           </button>
+          <button
+            onClick={() => setTab("monthly")}
+            className={`px-5 py-2 text-sm font-medium transition ${
+              tab === "monthly" ? "bg-wine-600 text-white" : "text-plum-900/60 hover:bg-blush-100"
+            }`}
+          >
+            شهري
+          </button>
+        </div>
+
+        {tab === "daily" ? (
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => {
+              setDate(e.target.value);
+              fetchDaily(e.target.value);
+            }}
+            className="rounded-full border border-rose-400/30 bg-white px-4 py-2 text-sm focus:border-wine-500 focus:outline-none"
+          />
+        ) : (
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => {
+              setMonth(e.target.value);
+              fetchMonthly(e.target.value);
+            }}
+            className="rounded-full border border-rose-400/30 bg-white px-4 py-2 text-sm focus:border-wine-500 focus:outline-none"
+          />
+        )}
+      </div>
+
+      {loading && <p className="mb-4 text-sm text-plum-900/50">جاري تحميل الإحصائيات...</p>}
+      {error && (
+        <div className="mb-4 rounded-xl border border-wine-600/30 bg-wine-600/5 p-3 text-sm text-wine-700">
+          {error}
         </div>
       )}
 
-      <section className="mt-8">
-        <h3 className="mb-2 font-display font-semibold text-wine-600">قائمة الانتظار</h3>
-        <ol className="space-y-2">
-          {waiting.map((a) => (
-            <li
-              key={a.id}
-              className="flex items-center gap-3 rounded-xl border border-rose-400/10 bg-white p-2 shadow-soft"
-            >
-              <span className="queue-badge h-8 w-8 flex-shrink-0 text-sm font-bold">
-                {a.queueNumber}
-              </span>
-              {a.patient.name}
-            </li>
-          ))}
-        </ol>
-      </section>
+      {/* ===== يومي ===== */}
+      {tab === "daily" && daily && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatCard label="إجمالي الحجوزات" value={daily.total} />
+            <StatCard label="حالات مكتملة" value={daily.byStatus.COMPLETED || 0} />
+            <StatCard label="حالات غياب" value={daily.byStatus.NO_SHOW || 0} />
+            <StatCard
+              label="متوسط وقت الانتظار"
+              value={daily.avgWaitMinutes !== null ? `${daily.avgWaitMinutes} دقيقة` : "-"}
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <BreakdownList title="الحالة" data={daily.byStatus} labels={statusLabels} />
+            <BreakdownList
+              title="مصدر الحجز"
+              data={daily.bySource}
+              labels={{ ONLINE: "أونلاين", WALK_IN: "حضوري" }}
+            />
+            <BreakdownList title="الأولوية" data={daily.byPriority} labels={priorityLabels} />
+          </div>
+        </div>
+      )}
+
+      {/* ===== شهري ===== */}
+      {tab === "monthly" && monthly && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatCard label="إجمالي الحجوزات" value={monthly.total} />
+            <StatCard label="حالات مكتملة" value={monthly.byStatus.COMPLETED || 0} />
+            <StatCard label="مريضات جديدة" value={monthly.newPatients} />
+            <StatCard label="حالات متابعة" value={monthly.returningPatients} />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <BreakdownList title="الحالة" data={monthly.byStatus} labels={statusLabels} />
+            <BreakdownList
+              title="مصدر الحجز"
+              data={monthly.bySource}
+              labels={{ ONLINE: "أونلاين", WALK_IN: "حضوري" }}
+            />
+            <BreakdownList title="نوع الزيارة" data={monthly.byVisitType} labels={visitTypeLabels} />
+          </div>
+
+          <div className="rounded-2xl border border-rose-400/20 bg-white p-4 shadow-soft">
+            <p className="mb-3 text-sm font-semibold text-wine-600">عدد الحجوزات يوم بيوم</p>
+            <div className="flex h-32 items-end gap-1 overflow-x-auto">
+              {monthly.dailyCounts.map((d) => (
+                <div
+                  key={d.date}
+                  title={`${d.date}: ${d.count}`}
+                  className="flex min-w-[10px] flex-1 flex-col items-center justify-end"
+                >
+                  <div
+                    className="w-full rounded-t bg-wine-500/70"
+                    style={{ height: `${(d.count / maxDailyCount) * 100}%`, minHeight: d.count > 0 ? "3px" : "0" }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex justify-between text-[10px] text-plum-900/40">
+              <span>1</span>
+              <span>{monthly.dailyCounts.length}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
