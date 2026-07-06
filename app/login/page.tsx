@@ -1,9 +1,8 @@
 "use client";
-
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -41,7 +40,6 @@ export default function LoginPage() {
           </div>
           <h1 className="font-display text-2xl font-semibold text-wine-700">دخول الموظفين</h1>
         </div>
-
         <form
           onSubmit={handleSubmit}
           className="rounded-2xl border border-rose-400/20 bg-white p-6 shadow-soft"
@@ -55,9 +53,7 @@ export default function LoginPage() {
             placeholder="••••••••"
             autoFocus
           />
-
           {error && <p className="mb-4 text-sm text-wine-600">{error}</p>}
-
           <button
             type="submit"
             disabled={loading}
@@ -68,5 +64,21 @@ export default function LoginPage() {
         </form>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main dir="rtl" className="flex min-h-screen items-center justify-center bg-blush-50 p-6 font-body">
+          <div className="queue-badge mx-auto h-14 w-14 text-xl font-display font-semibold">
+            ♀
+          </div>
+        </main>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }
