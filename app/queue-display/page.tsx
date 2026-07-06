@@ -62,16 +62,13 @@ export default function QueueDisplayPage() {
     fetchDoctorStatus();
     setNow(new Date());
 
-    // تحديث تلقائي احتياطي كل دقيقة - مجرد شبكة أمان لو الاتصال اللحظي (Realtime)
+    // تحديث تلقائي احتياطي كل 7 دقايق - مجرد شبكة أمان لو الاتصال اللحظي (Realtime)
     // قاطع، مش المصدر الأساسي للتحديث (ده شغل الـ Realtime subscription تحت)
-    // ملحوظة: كان الفاصل 5 ثواني قبل كده وده كان بيعمل حمل كبير جداً على السيرفر
-    // (~430 ألف طلب شهرياً من شاشة واحدة بس شغالة طول اليوم) وده كان استهلاك زيادة
-    // عن اللزوم لأن الـ Realtime بيحدّث فوراً أصلاً
     const pollInterval = setInterval(() => {
       fetchAppointments();
       fetchDoctorStatus();
       setNow(new Date());
-    }, 60000);
+    }, 5 * 60 * 1000);
 
     const channel = supabase
       .channel("queue-updates")
