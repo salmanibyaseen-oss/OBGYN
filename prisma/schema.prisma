@@ -99,6 +99,8 @@ model Appointment {
   queueNumber     Int
   estimatedTime   DateTime?
   checkedInAt     DateTime?
+  bloodPressure   String?   // بتتسجل وقت تسجيل الحضور من الريسبشن
+  weight          Float?    // بالكيلوجرام - بتتسجل وقت تسجيل الحضور من الريسبشن
   calledAt        DateTime?
   completedAt     DateTime?
   scheduledDate   DateTime
