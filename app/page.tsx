@@ -176,7 +176,7 @@ export default function HomePage() {
         </div>
 
         <p className="mt-10 text-center text-xs text-plum-900/40">
-          نظام داخلي لإدارة الطابور والحجوزات — {CLINIC_NAME}
+          نظام داخلي لإدارة الحجوزات — {CLINIC_NAME}
         </p>
       </div>
     </main>
